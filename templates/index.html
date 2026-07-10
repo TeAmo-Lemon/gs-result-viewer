@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3DGS Experiment Viewer</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --text: #eee;
+    --text2: #aaa;
+    --border: #333;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* --- top bar --- */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  #topbar label { font-size: 13px; color: var(--text2); white-space: nowrap; }
+  #topbar input, #topbar select, #topbar button {
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  #topbar input:focus, #topbar select:focus { border-color: var(--accent); }
+  #topbar button {
+    cursor: pointer;
+    background: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  #topbar button:hover { opacity: 0.85; }
+  #topbar button.secondary {
+    background: var(--surface2);
+    border-color: var(--surface2);
+  }
+  #path-input { flex: 1; min-width: 300px; font-family: monospace; }
+
+  /* --- main layout --- */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* --- sidebar --- */
+  #sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #sidebar-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #sidebar-header h3 { font-size: 14px; }
+  #exp-count { font-size: 12px; color: var(--text2); }
+  #exp-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .exp-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: monospace;
+    border: 1px solid transparent;
+    transition: background 0.15s;
+    word-break: break-all;
+  }
+  .exp-item:hover { background: var(--surface2); }
+  .exp-item.selected { border-color: var(--accent); background: rgba(233, 68, 96, 0.1); }
+  .exp-item input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
+
+  /* --- content area --- */
+  #content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #content-top {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  #img-nav { display: flex; align-items: center; gap: 8px; }
+  #img-nav button {
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 16px;
+  }
+  #img-nav button:hover { background: var(--surface2); }
+  #img-index {
+    font-family: monospace;
+    font-size: 14px;
+    min-width: 80px;
+    text-align: center;
+  }
+  #view-options { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* --- grid --- */
+  #comparison-area {
+    flex: 1;
+    overflow: hidden;
+    padding: 6px;
+    display: grid;
+    gap: 6px;
+  }
+  .img-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 4px;
+    border: 2px solid transparent;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .img-card img {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+  .img-card .card-label {
+    font-size: 10px;
+    font-family: monospace;
+    margin-top: 2px;
+    color: var(--text2);
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.2;
+  }
+  .img-card.gt-card { border-color: #4caf50; }
+  .img-card.gt-card .card-label { color: #4caf50; }
+
+  #empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text2);
+    font-size: 16px;
+  }
+
+  #status {
+    padding: 6px 16px;
+    font-size: 12px;
+    color: var(--text2);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <label>📁 路径:</label>
+  <input id="path-input" type="text" placeholder="/mnt/data2/experiments/3dgs/output_sem" value="/mnt/data2/experiments/3dgs/output_sem" />
+  <button id="btn-load" onclick="loadExperiments()">加载</button>
+  <label style="margin-left:12px">子集:</label>
+  <select id="subset-select" onchange="onSubsetChange()">
+    <option value="test">test</option>
+    <option value="train">train</option>
+  </select>
+  <button class="secondary" onclick="toggleSidebar()">☰ 列表</button>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h3>📂 目录列表</h3>
+      <span id="exp-count"></span>
+      <div>
+        <button class="secondary" style="font-size:11px;padding:4px 8px" onclick="selectAll()">全选</button>
+        <button class="secondary" style="font-size:11px;padding:4px 8px" onclick="deselectAll()">取消</button>
+      </div>
+    </div>
+    <div style="padding:6px 8px;border-bottom:1px solid var(--border)">
+      <input id="search-input" type="text" placeholder="🔍 搜索目录名..."
+             style="width:100%;padding:6px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-family:monospace;outline:none"
+             oninput="renderExperimentList()" />
+    </div>
+    <div id="exp-list"></div>
+  </div>
+
+  <div id="content">
+    <div id="content-top">
+      <div id="img-nav">
+        <button onclick="navImage(-1)" title="上一张">◀</button>
+        <span id="img-index">-</span>
+        <button onclick="navImage(1)" title="下一张">▶</button>
+        <button onclick="navImage(-10)" title="后退10张">⏪</button>
+        <button onclick="navImage(10)" title="前进10张">⏩</button>
+      </div>
+      <span style="font-size:12px;color:var(--text2)" id="img-total"></span>
+      <div id="view-options">
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="show-gt" onchange="renderComparison()" /> 显示GT
+        </label>
+      </div>
+    </div>
+    <div id="comparison-area">
+      <div id="empty-state">选择目录并加载图片开始对比</div>
+    </div>
+  </div>
+</div>
+
+<div id="status">就绪</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const pathInput = $('path-input');
+const expList = $('exp-list');
+const comparisonArea = $('comparison-area');
+const imgIndex = $('img-index');
+const imgTotal = $('img-total');
+const statusEl = $('status');
+const subsetSelect = $('subset-select');
+const sidebar = $('sidebar');
+
+let experiments = [];
+let selectedNames = new Set();
+let imageIndices = new Map();
+let commonIndices = [];
+let currentIdx = 0;
+let currentSubset = 'test';
+
+async function loadExperiments() {
+  const path = pathInput.value.trim();
+  if (!path) { alert('请输入路径'); return; }
+
+  statusEl.textContent = '加载中...';
+  const resp = await fetch(`/api/experiments?path=${encodeURIComponent(path)}`);
+  const data = await resp.json();
+
+  if (data.error) {
+    statusEl.textContent = '错误: ' + data.error;
+    return;
+  }
+
+  experiments = data.experiments;
+  selectedNames.clear();
+  imageIndices.clear();
+  commonIndices = [];
+  currentIdx = 0;
+  renderExperimentList();
+  renderComparison();
+  statusEl.textContent = `已加载 ${experiments.length} 个目录`;
+}
+
+function renderExperimentList() {
+  const q = ($('search-input').value || '').toLowerCase();
+  const filtered = q ? experiments.filter(e => e.name.toLowerCase().includes(q)) : experiments;
+
+  $('exp-count').textContent = `${selectedNames.size} / ${experiments.length}`;
+  if (q) $('exp-count').textContent += ` (${filtered.length} 匹配)`;
+
+  expList.innerHTML = filtered.map(exp => {
+    const sel = selectedNames.has(exp.name) ? ' selected' : '';
+    const escaped = escHtml(exp.name);
+    return `
+      <div class="exp-item${sel}" onclick="toggleExp('${escaped}')">
+        <input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation(); toggleExp('${escaped}')" />
+        <span>${escaped}</span>
+      </div>`;
+  }).join('');
+}
+
+function selectAll() {
+  const q = ($('search-input').value || '').toLowerCase();
+  const filtered = q ? experiments.filter(e => e.name.toLowerCase().includes(q)) : experiments;
+  filtered.forEach(e => selectedNames.add(e.name));
+  renderExperimentList();
+  onSelectionChanged();
+}
+
+function deselectAll() {
+  selectedNames.clear();
+  renderExperimentList();
+  onSelectionChanged();
+}
+
+function toggleExp(name) {
+  if (selectedNames.has(name)) selectedNames.delete(name);
+  else selectedNames.add(name);
+  renderExperimentList();
+  onSelectionChanged();
+}
+
+function getSelected() {
+  return experiments.filter(e => selectedNames.has(e.name));
+}
+
+async function onSelectionChanged() {
+  const selected = getSelected();
+  imageIndices.clear();
+  commonIndices = [];
+
+  const results = await Promise.all(selected.map(async exp => {
+    const resp = await fetch(`/api/image_indices?exp_path=${encodeURIComponent(exp.path)}&subset=${currentSubset}`);
+    const data = await resp.json();
+    return { name: exp.name, data };
+  }));
+
+  for (const { name, data } of results) {
+    if (data.indices && data.indices.length > 0) {
+      imageIndices.set(name, data.indices);
+    }
+  }
+
+  if (imageIndices.size > 0) {
+    const sets = [...imageIndices.values()].map(arr => new Set(arr));
+    commonIndices = [...sets[0]].filter(idx => sets.every(s => s.has(idx))).sort();
+  }
+
+  currentIdx = 0;
+  renderComparison();
+}
+
+function onSubsetChange() {
+  currentSubset = subsetSelect.value;
+  onSelectionChanged();
+}
+
+function navImage(delta) {
+  if (commonIndices.length === 0) return;
+  currentIdx = Math.max(0, Math.min(commonIndices.length - 1, currentIdx + delta));
+  renderComparison();
+}
+
+function optimalColumns(count, areaW, areaH, aspectRatio) {
+  if (count <= 1) return 1;
+  let best = { cols: 1, area: 0 };
+  const maxCols = Math.min(count, 8);
+  for (let cols = 1; cols <= maxCols; cols++) {
+    const rows = Math.ceil(count / cols);
+    const cellW = areaW / cols;
+    const cellH = areaH / rows;
+    const imgH = Math.min(cellH, cellW / aspectRatio);
+    const imgW = imgH * aspectRatio;
+    const area = imgW * imgH;
+    if (area > best.area) { best = { cols, area }; }
+  }
+  return best.cols;
+}
+
+function renderComparison() {
+  const selected = getSelected();
+  if (selected.length === 0 || commonIndices.length === 0) {
+    comparisonArea.innerHTML = '<div id="empty-state">选择目录并加载图片开始对比</div>';
+    imgIndex.textContent = '-';
+    imgTotal.textContent = '';
+    comparisonArea.style.gridTemplateColumns = '';
+    return;
+  }
+
+  const idx = commonIndices[currentIdx];
+  imgIndex.textContent = `${idx} [${currentIdx + 1}/${commonIndices.length}]`;
+  imgTotal.textContent = `共 ${commonIndices.length} 张`;
+
+  const showGt = $('show-gt').checked;
+  const totalCards = (showGt ? 1 : 0) + selected.length;
+  const areaW = comparisonArea.clientWidth - 12;
+  const areaH = comparisonArea.clientHeight - 12;
+  comparisonArea.style.gridTemplateColumns = `repeat(${optimalColumns(totalCards, areaW, areaH, 1.54)}, 1fr)`;
+
+  let html = '';
+
+  if (showGt && selected.length > 0) {
+    const exp = selected[0];
+    html += `
+      <div class="img-card gt-card">
+        <img src="/image?exp_path=${encodeURIComponent(exp.path)}&subset=${currentSubset}&type=gt&idx=${idx}"
+             loading="lazy" onerror="this.parentElement.style.display='none'" />
+        <div class="card-label">📷 GT</div>
+      </div>`;
+  }
+
+  for (const exp of selected) {
+    html += `
+      <div class="img-card">
+        <img src="/image?exp_path=${encodeURIComponent(exp.path)}&subset=${currentSubset}&type=render&idx=${idx}"
+             loading="lazy" onerror="this.parentElement.style.display='none'" />
+        <div class="card-label">${escHtml(exp.name)}</div>
+      </div>`;
+  }
+
+  comparisonArea.innerHTML = html;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft') navImage(-1);
+  if (e.key === 'ArrowRight') navImage(1);
+});
+
+function toggleSidebar() {
+  sidebar.style.display = sidebar.style.display === 'none' ? '' : 'none';
+}
+
+window.addEventListener('resize', () => {
+  if (commonIndices.length > 0) renderComparison();
+});
+
+function escHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+(() => {
+  const p = pathInput.value.trim();
+  if (p) loadExperiments();
+})();
+</script>
+</body>
+</html>
