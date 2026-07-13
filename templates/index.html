@@ -230,6 +230,12 @@
         <button class="secondary" style="font-size:11px;padding:4px 8px" onclick="deselectAll()">取消</button>
       </div>
     </div>
+    <div style="padding:4px 8px;border-bottom:1px solid var(--border);display:flex;gap:4px;align-items:center">
+      <span style="font-size:10px;color:var(--text2);white-space:nowrap">批次:</span>
+      <button class="secondary" style="font-size:10px;padding:3px 8px" onclick="prevBatch()" title="上一批">◀</button>
+      <span id="batch-info" style="font-size:10px;color:var(--text2);min-width:40px;text-align:center">-</span>
+      <button class="secondary" style="font-size:10px;padding:3px 8px" onclick="nextBatch()" title="下一批">▶</button>
+    </div>
     <div style="padding:6px 8px;border-bottom:1px solid var(--border)">
       <input id="search-input" type="text" placeholder="🔍 搜索目录名..."
              style="width:100%;padding:6px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-family:monospace;outline:none"
@@ -335,6 +341,58 @@ function deselectAll() {
   onSelectionChanged();
 }
 
+function getFiltered() {
+  const q = ($('search-input').value || '').toLowerCase();
+  return q ? experiments.filter(e => e.name.toLowerCase().includes(q)) : [...experiments];
+}
+
+function nextBatch() {
+  const filtered = getFiltered();
+  const batchSize = selectedNames.size || 1;
+  // Find indices of selected items in the filtered list
+  const selIndices = [];
+  filtered.forEach((e, i) => { if (selectedNames.has(e.name)) selIndices.push(i); });
+  const lastIdx = selIndices.length > 0 ? selIndices[selIndices.length - 1] : -1;
+  let start = lastIdx + 1;
+  if (start >= filtered.length) start = 0;  // wrap
+  selectedNames.clear();
+  for (let i = start, n = 0; i < filtered.length && n < batchSize; i++, n++) {
+    selectedNames.add(filtered[i].name);
+  }
+  renderExperimentList();
+  onSelectionChanged();
+  updateBatchInfo();
+}
+
+function prevBatch() {
+  const filtered = getFiltered();
+  const batchSize = selectedNames.size || 1;
+  const selIndices = [];
+  filtered.forEach((e, i) => { if (selectedNames.has(e.name)) selIndices.push(i); });
+  const firstIdx = selIndices.length > 0 ? selIndices[0] : filtered.length;
+  let start = firstIdx - batchSize;
+  if (start < 0) start = Math.max(0, filtered.length - batchSize);  // wrap to end
+  selectedNames.clear();
+  for (let i = start, n = 0; i < filtered.length && n < batchSize; i++, n++) {
+    selectedNames.add(filtered[i].name);
+  }
+  renderExperimentList();
+  onSelectionChanged();
+  updateBatchInfo();
+}
+
+function updateBatchInfo() {
+  const filtered = getFiltered();
+  const batchSize = selectedNames.size;
+  if (batchSize === 0) { $('batch-info').textContent = '-'; return; }
+  const selIndices = [];
+  filtered.forEach((e, i) => { if (selectedNames.has(e.name)) selIndices.push(i); });
+  if (selIndices.length === 0) { $('batch-info').textContent = '-'; return; }
+  const batchNum = Math.floor(selIndices[0] / batchSize) + 1;
+  const totalBatches = Math.ceil(filtered.length / batchSize);
+  $('batch-info').textContent = `${batchNum}/${totalBatches}`;
+}
+
 function toggleExp(name) {
   if (selectedNames.has(name)) selectedNames.delete(name);
   else selectedNames.add(name);
@@ -370,6 +428,7 @@ async function onSelectionChanged() {
 
   currentIdx = 0;
   renderComparison();
+  updateBatchInfo();
 }
 
 function onSubsetChange() {
