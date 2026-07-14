@@ -60,6 +60,7 @@ def api_image_indices():
     iter_dir = iter_dirs[0]
     renders_path = os.path.join(subset_path, iter_dir, 'renders')
     gt_path = os.path.join(subset_path, iter_dir, 'gt')
+    regions_path = os.path.join(subset_path, iter_dir, 'regions')
 
     indices = []
     if os.path.isdir(renders_path):
@@ -71,6 +72,7 @@ def api_image_indices():
         'indices': indices,
         'iter_dir': iter_dir,
         'has_gt': os.path.isdir(gt_path),
+        'has_regions': os.path.isdir(regions_path),
         'error': None,
     })
 
@@ -93,7 +95,12 @@ def serve_image():
         return 'No iteration folders', 404
 
     iter_dir = iter_dirs[0]
-    subfolder = 'gt' if img_type == 'gt' else 'renders'
+    if img_type == 'gt':
+        subfolder = 'gt'
+    elif img_type == 'region':
+        subfolder = 'regions'
+    else:
+        subfolder = 'renders'
     img_dir = os.path.join(subset_path, iter_dir, subfolder)
     if not os.path.isdir(img_dir):
         return 'Image folder not found', 404
