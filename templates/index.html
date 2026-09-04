@@ -212,7 +212,7 @@
 
 <div id="topbar">
   <label>📁 路径:</label>
-  <input id="path-input" type="text" placeholder="/mnt/data2/experiments/3dgs/output_sem" value="/mnt/data2/experiments/3dgs/output_sem" />
+  <input id="path-input" type="text" placeholder="/mnt/data2/experiments/3dgs/output_sem" value="{{ default_path | e }}" />
   <button id="btn-load" onclick="loadExperiments()">加载</button>
   <label style="margin-left:12px">子集:</label>
   <select id="subset-select" onchange="onSubsetChange()">
@@ -290,28 +290,61 @@ let imageIndices = new Map();
 let commonIndices = [];
 let currentIdx = 0;
 let currentSubset = 'test';
+let loadController = null;
+let selectionController = null;
+let selectionVersion = 0;
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchJson(url, signal) {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS);
+  const abortFromCaller = () => timeoutController.abort();
+  signal?.addEventListener('abort', abortFromCaller, { once: true });
+
+  try {
+    const resp = await fetch(url, { signal: timeoutController.signal });
+    if (!resp.ok) throw new Error(`服务器返回 HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    if (timeoutController.signal.aborted && !signal?.aborted) {
+      throw new Error(`请求超时（${REQUEST_TIMEOUT_MS / 1000} 秒）`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
 
 async function loadExperiments() {
   const path = pathInput.value.trim();
   if (!path) { alert('请输入路径'); return; }
 
+  loadController?.abort();
+  selectionController?.abort();
+  const controller = new AbortController();
+  loadController = controller;
   statusEl.textContent = '加载中...';
-  const resp = await fetch(`/api/experiments?path=${encodeURIComponent(path)}`);
-  const data = await resp.json();
+  try {
+    const data = await fetchJson(`/api/experiments?path=${encodeURIComponent(path)}`, controller.signal);
+    if (controller.signal.aborted) return;
+    if (data.error) throw new Error(data.error);
 
-  if (data.error) {
-    statusEl.textContent = '错误: ' + data.error;
-    return;
+    experiments = data.experiments;
+    selectedNames.clear();
+    imageIndices.clear();
+    commonIndices = [];
+    currentIdx = 0;
+    renderExperimentList();
+    renderComparison();
+    statusEl.textContent = `已加载 ${experiments.length} 个目录`;
+  } catch (err) {
+    if (!controller.signal.aborted) {
+      statusEl.textContent = `加载失败：${err.message}（点击“加载”重试）`;
+    }
+  } finally {
+    if (loadController === controller) loadController = null;
   }
-
-  experiments = data.experiments;
-  selectedNames.clear();
-  imageIndices.clear();
-  commonIndices = [];
-  currentIdx = 0;
-  renderExperimentList();
-  renderComparison();
-  statusEl.textContent = `已加载 ${experiments.length} 个目录`;
 }
 
 function renderExperimentList() {
@@ -411,18 +444,47 @@ function getSelected() {
 
 async function onSelectionChanged() {
   const selected = getSelected();
+  selectionController?.abort();
+  const controller = new AbortController();
+  selectionController = controller;
+  const version = ++selectionVersion;
   imageIndices.clear();
   commonIndices = [];
+  renderComparison();
+
+  if (selected.length === 0) {
+    statusEl.textContent = '请选择至少一个目录';
+    updateBatchInfo();
+    if (selectionController === controller) selectionController = null;
+    return;
+  }
+
+  statusEl.textContent = `正在读取 ${selected.length} 个目录的图片索引...`;
 
   const results = await Promise.all(selected.map(async exp => {
-    const resp = await fetch(`/api/image_indices?exp_path=${encodeURIComponent(exp.path)}&subset=${currentSubset}`);
-    const data = await resp.json();
-    return { name: exp.name, data };
+    try {
+      const data = await fetchJson(
+        `/api/image_indices?exp_path=${encodeURIComponent(exp.path)}&subset=${currentSubset}`,
+        controller.signal,
+      );
+      return { name: exp.name, data };
+    } catch (err) {
+      return { name: exp.name, error: err };
+    }
   }));
 
-  for (const { name, data } of results) {
+  if (controller.signal.aborted || version !== selectionVersion) return;
+
+  const failures = [];
+  for (const { name, data, error } of results) {
+    if (error) {
+      failures.push(`${name}: ${error.message}`);
+      continue;
+    }
     if (data.indices && data.indices.length > 0) {
       imageIndices.set(name, data.indices);
+    } else if (data.error) {
+      failures.push(`${name}: ${data.error}`);
     }
   }
 
@@ -434,6 +496,14 @@ async function onSelectionChanged() {
   currentIdx = 0;
   renderComparison();
   updateBatchInfo();
+  if (failures.length) {
+    statusEl.textContent = `已读取 ${imageIndices.size}/${selected.length} 个目录；${failures[0]}（重新选择目录或切换子集可重试）`;
+  } else if (commonIndices.length === 0) {
+    statusEl.textContent = '所选目录没有可共同显示的图片';
+  } else {
+    statusEl.textContent = `已读取 ${imageIndices.size} 个目录，共 ${commonIndices.length} 张共同图片`;
+  }
+  if (selectionController === controller) selectionController = null;
 }
 
 function onSubsetChange() {
